@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Music Class Live Score</title>
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <!-- Babel for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600;800&family=Prompt:wght@400;700&display=swap" rel="stylesheet">
+    <!-- FontAwesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <style>
+        body {
+            font-family: 'Kanit', sans-serif;
+            background-color: #0f172a; /* Dark Slate */
+            color: white;
+            overflow: hidden; /* Prevent scrolling for TV look */
+        }
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.08);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+        }
+        .score-text {
+            font-family: 'Prompt', sans-serif;
+            text-shadow: 0 0 25px rgba(234, 179, 8, 0.7);
+        }
+        .animate-pop {
+            animation: pop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+        @keyframes pop {
+            0% { transform: scale(0.6); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        .scrolling-comments {
+            mask-image: linear-gradient(to bottom, transparent, black 10%, black 90%, transparent);
+            -webkit-mask-image: linear-gradient(to bottom, transparent, black 10%, black 90%, transparent);
+        }
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: rgba(255,255,255,0.02); border-radius: 10px; }
+        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.3); }
+
+        /* Toggle Switch Styles */
+        .toggle-btn {
+            transition: all 0.3s ease;
+        }
+        .toggle-btn.active {
+            background-color: #3b82f6; /* Blue 500 */
+            color: white;
+            box-shadow: 0 0 15px rgba(59, 130, 246, 0.5);
+        }
+        .toggle-btn.inactive {
+            background-color: rgba(255, 255, 255, 0.1);
+            color: #9ca3af;
+        }
+        .toggle-btn.inactive:hover {
+            background-color: rgba(255, 255, 255, 0.2);
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        // ==========================================
+        // 🔧 ส่วนตั้งค่า: ลิงก์ API ของคุณครู (ผมใส่ให้แล้ว)
+        // ==========================================
+        const API_URL = "https://script.google.com/macros/s/AKfycbxKASLcbvdwOA85PaqzLkyYQ9-3TO9zDPHXJ4Xt1hNudha45A8vwPxAZS5kUQ0doow/exec"; 
+        
+        const App = () => {
+            // State สำหรับการควบคุม
+            const [selectedGrade, setSelectedGrade] = useState("1"); // ระดับชั้น ม.1 - ม.6
+            const [selectedRoom, setSelectedRoom] = useState("1"); // ห้อง /1 - /15
+            const [evalMode, setEvalMode] = useState("เดี่ยว"); // เดี่ยว หรือ กลุ่ม
+            const [selectedTarget, setSelectedTarget] = useState(""); // หมายเลข 1-50
+            const [refreshTrigger, setRefreshTrigger] = useState(0); // ตัวแปรสำหรับกดรีโหลด
+            
+            // State สำหรับข้อมูลการแสดงผล
+            const [score, setScore] = useState(0);
+            const [displayScore, setDisplayScore] = useState(0);
+            const [comments, setComments] = useState([]);
+            const [isLoading, setIsLoading] = useState(false);
+            const [error, setError] = useState("");
+
+            // ข้อมูลตัวเลือก
+            const grades = ["1", "2", "3", "4", "5", "6"];
+            const rooms = Array.from({length: 15}, (_, i) => `${i+1}`);
+            const targets = Array.from({length: 50}, (_, i) => `${i+1}`);
+
+            // ประกอบร่างชื่อห้อง
+            const fullClassName = `${selectedGrade}/${selectedRoom}`;
+
+            // Effect: ดึงข้อมูล
+            useEffect(() => {
+                if (!selectedTarget) {
+                    setScore(0);
+                    setComments([]);
+                    return;
+                }
+
+                if (API_URL.includes("วางลิงก์")) {
+                    setError("กรุณาวางลิงก์ Web App URL ในโค้ดก่อนใช้งาน");
+                    return;
+                }
+
+                setIsLoading(true);
+                setError("");
+
+                const fetchUrl = `${API_URL}?room=${encodeURIComponent(fullClassName)}&type=${encodeURIComponent(evalMode)}&id=${encodeURIComponent(selectedTarget)}`;
+
+                fetch(fetchUrl)
+                    .then(response => response.json())
+                    .then(data => {
+                        console.log("Data received:", data);
+                        setScore(parseFloat(data.score) || 0);
+
+                        let rawComments = data.comments ? String(data.comments) : "";
+                        let commentArray = [];
+                        
+                        if (rawComments && rawComments !== "-" && rawComments !== "ยังไม่มีความเห็น") {
+                            commentArray = rawComments.split(/[-]{5,}/) 
+                                .map(c => c.trim()) 
+                                .filter(c => c.length > 0); 
+                        } else {
+                            commentArray = [];
+                        }
+
+                        setComments(commentArray);
+                        setIsLoading(false);
+                    })
+                    .catch(err => {
+                        console.error("Error fetching data:", err);
+                        setError("เกิดข้อผิดพลาดในการดึงข้อมูล โปรดลองอีกครั้ง");
+                        setIsLoading(false);
+                    });
+
+            }, [selectedTarget, fullClassName, evalMode, refreshTrigger]);
+
+            // Effect: Animation ตัวเลขวิ่ง
+            useEffect(() => {
+                let start = displayScore;
+                const end = score;
+                if (start === end) return;
+
+                const duration = 1200;
+                const startTime = performance.now();
+
+                const animate = (currentTime) => {
+                    const elapsed = currentTime - startTime;
+                    const progress = Math.min(elapsed / duration, 1);
+                    const ease = progress === 1 ? 1 : 1 - Math.pow(2, -10 * progress);
+                    
+                    const current = start + (end - start) * ease;
+                    setDisplayScore(current);
+
+                    if (progress < 1) {
+                        requestAnimationFrame(animate);
+                    }
+                };
+
+                requestAnimationFrame(animate);
+            }, [score]);
+
+            const handleModeChange = (mode) => {
+                setEvalMode(mode);
+                setSelectedTarget(""); 
+            };
+
+            const handleRefresh = () => {
+                if (!isLoading && selectedTarget) {
+                    setRefreshTrigger(prev => prev + 1);
+                }
+            };
+
+            return (
+                <div className="min-h-screen flex flex-col items-center justify-center p-6 relative bg-[#0f172a] overflow-hidden">
+                    
+                    {/* Dynamic Animated Background */}
+                    <div className="absolute top-0 left-0 w-full h-full z-0 opacity-40 pointer-events-none">
+                        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-blue-600 rounded-full mix-blend-screen filter blur-[100px] animate-pulse"></div>
+                        <div className="absolute top-[20%] right-[-10%] w-[30%] h-[50%] bg-purple-600 rounded-full mix-blend-screen filter blur-[120px] opacity-70" style={{animation: 'pulse 4s infinite alternate'}}></div>
+                        <div className="absolute bottom-[-20%] left-[20%] w-[50%] h-[40%] bg-indigo-600 rounded-full mix-blend-screen filter blur-[100px] opacity-60" style={{animation: 'pulse 5s infinite alternate-reverse'}}></div>
+                    </div>
+
+                    {/* Header Bar */}
+                    <div className="z-20 w-full max-w-6xl mb-6 p-1 pl-6 glass-panel rounded-full flex flex-wrap items-center justify-between shadow-2xl">
+                        <div className="flex items-center gap-4">
+                            <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-blue-500 to-purple-500 flex items-center justify-center shadow-lg">
+                                <i className="fa-solid fa-music text-white text-sm"></i>
+                            </div>
+                            <div>
+                                <h1 className="font-bold text-white text-lg leading-tight">Live Stage</h1>
+                                <p className="text-blue-300 text-xs font-medium uppercase tracking-widest">Score System</p>
+                            </div>
+                        </div>
+
+                        {/* Control Panel */}
+                        <div className="flex items-center gap-3 bg-slate-900/50 p-2 rounded-full border border-slate-700/50 backdrop-blur-md">
+                            
+                            {/* Class Selector */}
+                            <div className="flex items-center bg-slate-800 rounded-full px-4 py-1.5 border border-slate-700">
+                                <span className="text-gray-400 text-sm mr-2 font-medium">ห้อง ม.</span>
+                                <select 
+                                    value={selectedGrade}
+                                    onChange={(e) => {setSelectedGrade(e.target.value); setSelectedTarget("");}}
+                                    className="bg-transparent text-white font-bold text-lg focus:outline-none cursor-pointer appearance-none text-center w-6"
+                                >
+                                    {grades.map(g => <option key={g} value={g} className="bg-slate-800">{g}</option>)}
+                                </select>
+                                <span className="text-gray-400 text-lg mx-1">/</span>
+                                <select 
+                                    value={selectedRoom}
+                                    onChange={(e) => {setSelectedRoom(e.target.value); setSelectedTarget("");}}
+                                    className="bg-transparent text-white font-bold text-lg focus:outline-none cursor-pointer appearance-none text-center min-w-[20px]"
+                                >
+                                    {rooms.map(r => <option key={r} value={r} className="bg-slate-800">{r}</option>)}
+                                </select>
+                                <i className="fa-solid fa-caret-down text-gray-500 ml-2 text-xs pointer-events-none"></i>
+                            </div>
+
+                            <div className="w-px h-8 bg-slate-700 mx-1"></div>
+
+                            {/* Mode Toggle (เดี่ยว / กลุ่ม) */}
+                            <div className="flex p-1 bg-slate-800 rounded-full border border-slate-700">
+                                <button 
+                                    onClick={() => handleModeChange("เดี่ยว")}
+                                    className={`px-4 py-1.5 rounded-full text-sm font-semibold flex items-center gap-2 transition-all duration-300 ${evalMode === "เดี่ยว" ? "bg-blue-500 text-white shadow-[0_0_15px_rgba(59,130,246,0.6)]" : "bg-white/10 text-gray-400 hover:bg-white/20"}`}
+                                >
+                                    <i className="fa-solid fa-user text-xs"></i> เดี่ยว
+                                </button>
+                                <button 
+                                    onClick={() => handleModeChange("กลุ่ม")}
+                                    className={`px-4 py-1.5 rounded-full text-sm font-semibold flex items-center gap-2 transition-all duration-300 ${evalMode === "กลุ่ม" ? "bg-purple-500 text-white shadow-[0_0_15px_rgba(168,85,247,0.6)]" : "bg-white/10 text-gray-400 hover:bg-white/20"}`}
+                                >
+                                    <i className="fa-solid fa-users text-xs"></i> กลุ่ม
+                                </button>
+                            </div>
+
+                            <div className="w-px h-8 bg-slate-700 mx-1"></div>
+
+                            {/* Target Selector */}
+                            <div className="relative">
+                                <select 
+                                    value={selectedTarget}
+                                    onChange={(e) => setSelectedTarget(e.target.value)}
+                                    className="bg-blue-600 hover:bg-blue-500 transition-colors text-white font-bold rounded-full px-6 py-2 pr-10 appearance-none focus:outline-none focus:ring-2 focus:ring-blue-400 shadow-lg cursor-pointer min-w-[140px]"
+                                >
+                                    <option value="">{evalMode === "เดี่ยว" ? "เลือกเลขที่" : "เลือกกลุ่ม"}</option>
+                                    {targets.map(t => (
+                                        <option key={t} value={t} className="bg-slate-800 text-white">
+                                            {evalMode === "เดี่ยว" ? `เลขที่ ${t}` : `กลุ่มที่ ${t}`}
+                                        </option>
+                                    ))}
+                                </select>
+                                <div className="absolute right-4 top-1/2 transform -translate-y-1/2 pointer-events-none text-white/70">
+                                    <i className="fa-solid fa-play text-xs"></i>
+                                </div>
+                            </div>
+                            
+                            {/* Refresh Button */}
+                            <div className="ml-1 pr-1">
+                                <button
+                                    onClick={handleRefresh}
+                                    disabled={!selectedTarget || isLoading}
+                                    className={`w-10 h-10 rounded-full flex items-center justify-center transition-all duration-300 focus:outline-none ${!selectedTarget ? 'bg-slate-800 text-slate-600 cursor-not-allowed border border-slate-700' : 'bg-slate-700 hover:bg-slate-600 text-white border border-slate-600 shadow-lg hover:shadow-blue-500/20'}`}
+                                    title="รีโหลดคะแนนล่าสุด"
+                                >
+                                    <i className={`fa-solid fa-rotate-right ${isLoading ? 'animate-spin text-blue-400' : ''}`}></i>
+                                </button>
+                            </div>
+
+                        </div>
+                    </div>
+
+                    {/* Error Message */}
+                    {error && (
+                        <div className="z-50 absolute top-24 bg-red-500/90 backdrop-blur-sm text-white px-6 py-3 rounded-2xl shadow-2xl animate-pop border border-red-400">
+                            <i className="fa-solid fa-triangle-exclamation mr-2"></i> {error}
+                        </div>
+                    )}
+
+                    {/* Main Stage Display */}
+                    <div className="z-10 w-full max-w-6xl flex-1 flex flex-col md:flex-row gap-6 min-h-0">
+                        
+                        {/* Left Side: Spotlight & Score */}
+                        <div className="w-full md:w-3/5 flex flex-col gap-6">
+                            
+                            {/* Header Banner */}
+                            <div className="glass-panel rounded-[2rem] p-8 relative overflow-hidden flex flex-col justify-center min-h-[160px] border-t-4 border-t-blue-500">
+                                <div className="absolute -right-10 -top-10 text-[10rem] opacity-5 text-white pointer-events-none">
+                                    <i className="fa-solid fa-microphone-lines"></i>
+                                </div>
+                                <h2 className="text-blue-300 mb-1 font-medium tracking-[0.2em] text-sm flex items-center gap-2">
+                                    <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
+                                    NOW SHOWING
+                                </h2>
+                                
+                                {selectedTarget ? (
+                                    <div className="animate-pop">
+                                        <div className="text-gray-400 text-lg mb-1 font-medium">ห้อง ม.{fullClassName}</div>
+                                        <h1 className="text-5xl md:text-6xl font-extrabold text-white tracking-tight">
+                                            {evalMode === "เดี่ยว" ? "เดี่ยว เลขที่ " : "กลุ่มที่ "}<span className="text-yellow-400">{selectedTarget}</span>
+                                        </h1>
+                                    </div>
+                                ) : (
+                                    <h1 className="text-3xl md:text-4xl font-semibold text-gray-500/50 italic mt-4">
+                                        รอเริ่มการแสดง...
+                                    </h1>
+                                )}
+                            </div>
+
+                            {/* Huge Score Card */}
+                            <div className="glass-panel rounded-[2rem] p-10 flex-1 flex flex-col items-center justify-center relative shadow-2xl border border-white/5">
+                                {isLoading ? (
+                                    <div className="flex flex-col items-center gap-6 animate-pop">
+                                        <div className="relative">
+                                            <div className="w-24 h-24 border-4 border-slate-700 rounded-full"></div>
+                                            <div className="w-24 h-24 border-4 border-blue-500 rounded-full absolute top-0 left-0 border-t-transparent animate-spin"></div>
+                                            <i className="fa-solid fa-music absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-xl text-blue-400"></i>
+                                        </div>
+                                        <div className="text-blue-300 text-sm font-medium tracking-widest animate-pulse uppercase">Syncing Data...</div>
+                                    </div>
+                                ) : selectedTarget ? (
+                                    <div className="w-full flex flex-col items-center animate-pop">
+                                        <div className="text-gray-400 text-sm font-bold tracking-[0.3em] uppercase mb-4 opacity-80 border-b border-gray-700 pb-2">Total Score</div>
+                                        
+                                        <div className="relative">
+                                            {/* Score Shadow for depth */}
+                                            <div className="absolute top-2 left-0 w-full text-center text-[10rem] md:text-[14rem] font-black score-text text-yellow-600/20 leading-none blur-sm pointer-events-none select-none">
+                                                {displayScore.toFixed(1)}
+                                            </div>
+                                            {/* Actual Score */}
+                                            <div className="text-[10rem] md:text-[14rem] font-black score-text text-transparent bg-clip-text bg-gradient-to-b from-yellow-300 to-yellow-600 leading-none relative z-10 filter drop-shadow-2xl">
+                                                {displayScore.toFixed(1)}
+                                            </div>
+                                        </div>
+
+                                        {/* Progress Bar */}
+                                        <div className="mt-12 w-3/4 max-w-md bg-slate-800/80 rounded-full h-3 overflow-hidden border border-slate-700 shadow-inner">
+                                            <div 
+                                                className="bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 h-full rounded-full transition-all duration-1000 ease-out relative"
+                                                style={{ width: `${Math.min((displayScore / 10) * 100, 100)}%` }} 
+                                            >
+                                                <div className="absolute top-0 right-0 w-10 h-full bg-white/30 blur-[2px] -skew-x-12 transform translate-x-5"></div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="flex flex-col items-center justify-center opacity-30">
+                                        <div className="w-32 h-32 rounded-full border-2 border-dashed border-gray-500 flex items-center justify-center mb-6">
+                                            <i className="fa-solid fa-headphones text-4xl text-gray-500"></i>
+                                        </div>
+                                        <p className="text-gray-400 font-medium tracking-wide uppercase">Select Performer</p>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Right Side: Live Feedback Feed */}
+                        <div className="w-full md:w-2/5 glass-panel rounded-[2rem] flex flex-col overflow-hidden border-t-4 border-t-purple-500">
+                            {/* Feed Header */}
+                            <div className="bg-slate-900/40 p-6 flex items-center justify-between border-b border-white/5 backdrop-blur-md">
+                                <div className="flex items-center gap-3">
+                                    <div className="bg-purple-500/20 text-purple-400 w-10 h-10 rounded-xl flex items-center justify-center border border-purple-500/30">
+                                        <i className="fa-solid fa-comment-dots text-lg"></i>
+                                    </div>
+                                    <div>
+                                        <h3 className="text-lg font-bold text-white leading-tight">Live Feedback</h3>
+                                        <p className="text-gray-400 text-xs">ความคิดเห็นจากผู้ชม</p>
+                                    </div>
+                                </div>
+                                <span className="bg-green-500/20 text-green-400 text-[10px] font-bold px-3 py-1 rounded-full border border-green-500/30 flex items-center gap-1.5 uppercase tracking-wider">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse"></span>
+                                    Live
+                                </span>
+                            </div>
+
+                            {/* Feed Content */}
+                            <div className="flex-1 overflow-y-auto p-6 scrolling-comments space-y-4 relative bg-slate-900/20">
+                                {isLoading ? (
+                                    <div className="space-y-4">
+                                        {[1,2,3].map(i => (
+                                            <div key={i} className="bg-slate-800/40 p-5 rounded-2xl border border-white/5 animate-pulse flex gap-4">
+                                                <div className="w-10 h-10 rounded-full bg-slate-700/50 shrink-0"></div>
+                                                <div className="flex-1 space-y-2 py-1">
+                                                    <div className="h-3 bg-slate-700/50 rounded w-1/4"></div>
+                                                    <div className="h-4 bg-slate-700/50 rounded w-3/4"></div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : comments.length > 0 ? (
+                                    comments.map((comment, index) => (
+                                        <div 
+                                            key={index} 
+                                            className="bg-slate-800/60 p-5 rounded-2xl border-l-4 border-l-purple-500 border border-white/5 shadow-lg animate-pop relative overflow-hidden group hover:bg-slate-800 transition-colors"
+                                            style={{animationDelay: `${index * 80}ms`}}
+                                        >
+                                            <div className="flex gap-4">
+                                                <div className="w-10 h-10 rounded-full bg-slate-700 flex items-center justify-center text-gray-400 shrink-0 shadow-inner">
+                                                    <i className="fa-solid fa-user-astronaut text-sm"></i>
+                                                </div>
+                                                <div>
+                                                    <div className="text-purple-300 text-xs font-semibold mb-1">ผู้ชมอิสระ</div>
+                                                    <p className="text-gray-100 text-base leading-relaxed font-light">"{comment}"</p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))
+                                ) : (
+                                    <div className="absolute inset-0 flex flex-col items-center justify-center text-gray-500/50">
+                                        <i className="fa-regular fa-comments text-5xl mb-4 opacity-50"></i>
+                                        <p className="font-medium">{selectedTarget ? "รอรับข้อความแรก..." : ""}</p>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* 🌟 Footer / Copyright 🌟 */}
+                    <div className="w-full text-center mt-6 z-20">
+                        <p className="text-slate-500 text-xs font-light tracking-widest uppercase">
+                            &copy; {new Date().getFullYear()} Music Class Live System • Created by <span className="text-blue-400 font-medium">ว่าที่ร้อยตรีมติพัฒน์  เชิดสุข @โรงเรียนธัญรัตน์</span>
+                        </p>
+                    </div>
+
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
